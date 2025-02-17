@@ -1,5 +1,6 @@
 <html lang="en">
 <head>
+    <meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'">
     <title>fixi test suite</title>
     <script>
         let tests = [];
@@ -27,6 +28,10 @@
               evt.detail.cfg.fetch = fetchMock
             }
         })
+        const testPolicy = self.trustedTypes && self.trustedTypes.createPolicy ?
+          self.trustedTypes.createPolicy('testPolicy', {
+            createHTML: x => x,
+          }) : { createHTML: x => x };
         function test(code){
             let currentScript = document.currentScript;
             let testElt = currentScript.closest('div');
@@ -35,12 +40,12 @@
                 try {
                     await code();
                     testElt.classList.add("passed");
-                    testElt.insertAdjacentHTML('beforeend', `<p>Passed</p>`)
+                    testElt.insertAdjacentHTML('beforeend', testPolicy.createHTML(`<p>Passed</p>`))
                     passed++;
                     document.querySelector(".passed-info").querySelector("output").innerText = passed.toString();
                 } catch (e) {
                     testElt.classList.add("failed");
-                    testElt.insertAdjacentHTML('beforeend', `<p>ERROR: ${e}</p>`)
+                    testElt.insertAdjacentHTML('beforeend', testPolicy.createHTML(`<p>ERROR: ${e}</p>`))
                     failed++;
                     document.querySelector(".failed-info").querySelector("output").innerText = failed.toString();
                 } finally {
@@ -76,9 +81,9 @@
         document.addEventListener('DOMContentLoaded', async () => {
             for (let i = 0; i < document.querySelectorAll(".test").length; i++){
                 const testBlock = document.querySelectorAll(".test")[i];
-                testBlock.querySelector("h3").insertAdjacentHTML("beforeend", ` - <a id='test${i}' href="test.html?test${i}">run</a>`)
+                testBlock.querySelector("h3").insertAdjacentHTML("beforeend", testPolicy.createHTML(` - <a id='test${i}' href="test.html?test${i}">run</a>`))
                 let scriptElt = testBlock.querySelector("script");
-                scriptElt.insertAdjacentHTML("beforebegin", `<b>Code:</b><pre></pre>`)
+                scriptElt.insertAdjacentHTML("beforebegin", testPolicy.createHTML(`<b>Code:</b><pre></pre>`))
                 scriptElt.previousElementSibling.innerText = scriptElt.innerText.replaceAll(/^ {8}/gm, '') + "\n";
                 if (location.search.indexOf("?test") === 0) {
                   let index = parseInt(location.search.substring(5));
@@ -141,7 +146,12 @@
     <div>
         <div class="passed-info">Passed: <output></output></div>
         <div class="failed-info">Failed: <output></output></div>
-        <a href="javascript:document.body.classList.toggle('hide-passed')">Toggle Passed</a><br/>
+        <a id="toggle" href="#">Toggle Passed</a><br/>
+        <script>
+          document.getElementById('toggle').addEventListener('click', () => {
+            document.body.classList.toggle('hide-passed');
+          });
+        </script>
         <a href="test.html">Run All</a>
     </div>
 </header>
@@ -168,7 +178,7 @@
             <h3>Test basic button works when added dynamically</h3>
             <script>
               test(async ()=>{
-                currentTest.testElt.insertAdjacentHTML('beforeEnd', `<button fx-action="/demo">Button 1</button>`)
+                currentTest.testElt.insertAdjacentHTML('beforeEnd', testPolicy.createHTML(`<button fx-action="/demo">Button 1</button>`))
                 await sleep(50);
                 mock("/demo", "<div>Foo</div>");
                 find('button').click();
@@ -197,7 +207,42 @@
         </div>
 
         <div class="test">
-            <h3>Test basic target works</h3>
+          <h3>Test basic target works (createScript)</h3>
+          <script>
+            test(async ()=>{
+              mock("/demo", "'valid JS'");
+              find('button').click();
+              await sleep(50);
+              assertEq(find('#outputScript')?.textContent, "'valid JS'", true);
+            })
+          </script>
+          <button fx-action="/demo" fx-target="#outputScript" fx-swap="textContent">
+              Button 1
+          </button>
+          <script id="outputScript">
+          </script>
+        </div>
+
+        <div class="test">
+          <h3>Test basic target works (createScriptURL)</h3>
+          <script>
+            test(async ()=>{
+              mock("/demo", "fixi.js");
+              find('button').click();
+              await sleep(50);
+              // Last bit in the URL should be fixi.js.
+              assertEq(/[^/]*$/.exec(find('#outputScript1')?.src)[0], "fixi.js", true);
+            })
+          </script>
+          <button fx-action="/demo" fx-target="#outputScript1" fx-swap="src">
+              Button 1
+          </button>
+          <script id="outputScript1">
+          </script>
+        </div>
+
+        <div class="test">
+            <h3>Test basic target works (createHTML)</h3>
             <script>
               test(async ()=>{
                 mock("/demo", "<div>Foo</div>");
@@ -629,10 +674,13 @@
 
     <section id="web-components">
         <script>
+          const passThrough = { createHTML: x => x };
+          const testComponentPolicy = self.trustedTypes && self.trustedTypes.createPolicy ?
+            self.trustedTypes.createPolicy('testComponentPolicy', passThrough) : passThrough;
           class TestWebComponent extends HTMLElement {
             connectedCallback() {
               console.log(this.innerHTML)
-              this.innerHTML = this.getAttribute('data-inner-html');
+              this.innerHTML = testComponentPolicy.createHTML(this.getAttribute('data-inner-html'));
               console.log(this.innerHTML)
             }
           }

@@ -4,6 +4,12 @@
 	let send = (elt, type, detail, bub)=>elt.dispatchEvent(new CustomEvent("fx:" + type, {detail, cancelable:true, bubbles:bub !== false, composed:true}))
 	let attr = (elt, name, defaultVal)=>elt.getAttribute(name) || defaultVal
 	let ignore = (elt)=>elt.closest("[fx-ignore]") != null
+	const pt = {
+		createHTML: x => x,
+		createScript: x => x,
+		createScriptURL: x => x,
+	}
+	const p = self.trustedTypes && self.trustedTypes.createPolicy ? self.trustedTypes.createPolicy('fixijs', pt) : pt;
 	let init = (elt)=>{
 		let options = {}
 		if (elt.__fixi || ignore(elt) || !send(elt, "init", {options})) return
@@ -58,7 +64,15 @@
 				if (cfg.swap instanceof Function)
 					return cfg.swap(cfg)
 				else if (/(before|after)(start|end)/.test(cfg.swap))
-					cfg.target.insertAdjacentHTML(cfg.swap, cfg.text)
+					cfg.target.insertAdjacentHTML(cfg.swap, p.createHTML(cfg.text))
+				else if (/HTML$/.test(cfg.swap))
+					cfg.target[cfg.swap] = p.createHTML(cfg.text)
+				else if (cfg.target instanceof HTMLScriptElement) {
+					if (cfg.swap === 'src')
+						cfg.target[cfg.swap] = p.createScriptURL(cfg.text)
+					else
+						cfg.target[cfg.swap] = p.createScript(cfg.text)
+				}
 				else if(cfg.swap in cfg.target)
 					cfg.target[cfg.swap] = cfg.text
 				else throw cfg.swap
